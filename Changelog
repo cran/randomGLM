@@ -1,0 +1,15 @@
+
+Changes since 1.00
+
+2013/01/13: 1.00-1
+
+	. Fixed a bug with default nThreads
+
+
+Changes to version included in WGCNA
+
+	. Parallelized main loop; number of threads can be controled via
+	  argument nThreads
+
+	. bagObsIndex element of output is now nObservationsPerBag times nBags
+	  (transposed to what it was before)

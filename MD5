@@ -1,0 +1,12 @@
+4a3ad62c2443ed892e0ba90d3dc628c1 *Changelog
+3a0f8b9f174dca236861963c3714f99d *DESCRIPTION
+95f98d453dfe647b6da24d0dd3319bcb *NAMESPACE
+3cecc05464a7313278ca6f77bd66232d *R/randomGLM.R
+5000cee477bc09c9d7224dd4d62812b2 *data/brainCancer.rda
+ecf3dfd8cc82215557738368ec7ee692 *data/datalist
+147129a0f0e39e67aabbbbabe95d0b52 *data/mini.rda
+2a270afdb7c1bf72f8832e7eb5e3e959 *man/brainCancer.Rd
+28fda18e90cc9501d8559d0c077e2ae7 *man/mini.Rd
+8e9183ce11f2bae5fd080e78e931b550 *man/predict.randomGLM.Rd
+7bade3b7f8077b337e616770664647ff *man/randomGLM.Rd
+07d0b3f23919e3372795f6c977860cd5 *man/thinRandomGLM.Rd
