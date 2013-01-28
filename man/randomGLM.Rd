@@ -29,6 +29,7 @@ randomGLM(
   nObsInBag = if (replace) nrow(x) else as.integer(0.632 * nrow(x)),
   nFeaturesInBag = ceiling(ifelse(ncol(x)<=10, ncol(x),
                 ifelse(ncol(x)<=300, (1.0276-0.00276*ncol(x))*ncol(x), ncol(x)/5))),
+  minInBagObs = min( max( nrow(x)/2, 5), 2*nrow(x)/3),
 
   # Individual ensemble member predictor options
   nCandidateCovariates=50,
@@ -40,6 +41,7 @@ randomGLM(
 
   # Miscellaneous options
   thresholdClassProb = 0.5,
+  interactionSeparatorForCoefNames = ".times.",
   randomSeed = 12345,
   nThreads = NULL,
   verbose =0 )
@@ -97,6 +99,11 @@ same number of observations as in the original data set (i.e. the rows of \code{
 without replacement. If there are no interaction terms, then this number should be smaller than or equal to
 the number of rows of \code{x}.}  
 
+  \item{minInBagObs}{minimum number of unique observations that constitute a valid bag. If the sampling
+produces a bag with fewer than this number of unique observations, the bag is discarded and re-sampled again
+until the number of unique observations is at least \code{minInBagObs}. This helps prevent too few unique
+observations in a bag which would lead to problems with model selection. }
+
   \item{nCandidateCovariates}{Positive integer. The number of features that are being considered for forward
 selection in each GLM (and in each bag). For each bag, the covariates are being chosen according their
 highest absolute correlation with the outcome. In case of a binary outcome, it is first turned into a binary
@@ -115,7 +122,16 @@ correlation \code{\link[WGCNA]{bicor}}, use the argument \code{"robustY=FALSE"}.
 
   \item{keepModels}{logical: should the regression models for each bag be kept? The models are necessary for future predictions using the \code{predict} function, predict() generic.}
 
-  \item{thresholdClassProb}{number in the interval [0,1]. Recommended value 0.5. This parameter is only relevant in case of a binary outcome, i.e. for a logistic regression model. Then this threshold will be applied to the predictive class probabilities to arrive at binary outcome (class outcome). }
+  \item{thresholdClassProb}{number in the interval [0,1]. Recommended value 0.5. This parameter is only
+relevant in case of a binary outcome, i.e. for a logistic regression model. Then this threshold will be
+applied to the predictive class probabilities to arrive at binary outcome (class outcome). }
+
+ \item{interactionSeparatorForCoefNames}{a character string that will be used to separate feature names when
+forming names of interaction terms. This is only used when interactions are actually taken into account (see
+\code{maxInteractionLevel} above) and only affects coefficient names in models and columns names in returned
+\code{featuresInForwardRegression} (see output value below). We recommend setting it so the interaction
+separator does not conflict with any feature name since this may improve interpretability of the results.}
+
 
   \item{randomSeed}{NULL or integer. The seed for the random number generator. If NULL, the seed will not be
 set. If non-NULL and the random generator has been initialized prior to the function call, the latter's
@@ -135,7 +151,8 @@ At this point, the function \code{randomGLM} can be used to predict a binary out
 quantitative numeric outcome. This ensemble predictor proceeds along the following steps. 
 
 Step 1 (bagging): \code{nBags} bootstrapped data sets are being generated based on random sampling from the
-original training data set (\code{x},\code{y}).  
+original training data set (\code{x},\code{y}). If a bag contains less than \code{minInBagObs} unique
+observations or it contains all observations, it is discarded and re-sampled again.
 
 Step 2 (random subspace): For each bag, \code{nFeaturesInBag} features are randomly selected (without
 replacement) from the columns of \code{x}. Optionally, interaction terms between the selected features can
@@ -151,7 +168,7 @@ outcome in each bag.
 Step 5 (aggregating the predictions): Prediction from each bag are aggregated. In case, of a quantitative
 outcome, the predictions are simply averaged across the bags. 
 
-Additional comments: Generally, \code{nCandidateCovariates}>100 is not recommended, because the forward
+Generally, \code{nCandidateCovariates}>100 is not recommended, because the forward
 selection process is 
 time-consuming. If arguments \code{"nBags=1, replace=FALSE, nObsInBag=nrow(x)"} are used, 
 the function becomes a forward selection GLM predictor without bagging. 
@@ -175,6 +192,21 @@ such "ignored" levels are still included on the "all" side of "level vs. all" bi
 
 At this time the predictor does not attempt to summarize the binary variable classifications into a single
 multi-level classification. 
+
+Training this predictor on data with fewer than 8 observations is not recommended (and the
+function will warn about it). Due to the bagging
+step, the number of unique observations in each bag is less than the number of observations in the input
+data; the low number of unique observations can (and often will) lead to an essentially perfect fit which
+makes it impossible to perfrom meaningful stepwise model selection.  
+
+Feature names: In general, the column names of input \code{x} are assumed to be the feature names. If
+\code{x} has no column names (i.e., \code{colnames(x)} is \code{NULL}), stadard column names of the form
+\code{"F01", "F02", ...} are used. If \code{x} has non-NULL column names, they are turned into valid and
+unique names using the function \code{\link{make.names}}. If the function \code{\link{make.names}} returns
+names that are not the same as the column names of \code{x}, the component \code{featureNamesChanged} will
+be \code{TRUE} and the component \code{nameTranslationTable} contains the information about input and actual
+used feature names. The feature names are used as predictor names in the individual models in each bag.
+
 }
 
 \value{
@@ -206,7 +238,8 @@ component per bag. Each component
 is a matrix with \code{maxInteractionOrder} rows.
 Each column represents one
 interaction obtained by multiplying the features indicated by the entries in each column (0 means no 
-feature, i.e. a lower order interaction).  }
+feature, i.e. a lower order interaction). The column names contain human-readable names for the terms. }
+
   \item{coefOfForwardRegression}{coefficients of forward regression. A list with one
 component per bag. Each component is a vector giving the coefficients of the model determined by forward
 selection in the corresponding bag. The order of the coefficients is the same as the order of the terms in
@@ -224,8 +257,16 @@ columns. Each entry gives the number of times the corresponding feature appeared
 corresponding order of interactions. Interactions where a single feature enters more than once (e.g., a
 quadratic interaction of the feature with itself) are counted once. 
 }
-  \item{models}{the regression models for each bag. }
+  \item{models}{the regression models for each bag. Predictor features in each bag model are named using
+their}
 
+ \item{featureNamesChanged}{logical indicating whether feature names were copied verbatim from column names
+of \code{x} (\code{FALSE}) or whether they had to be changed to make them valid and unique names
+(\code{TRUE}).}
+
+  \item{nameTranslationTable}{ only present if above \code{featureNamesChanged} is \code{TRUE}. 
+A data frame with three columns and one row per input feature (column of input \code{x}) giving the  
+feature number, original feature name, and modified feature name that is used for model fitting.}
 
 In addition, the output value contains a copy of several input arguments. These are included to facilitate
 prediction using the \code{predict} method. These returned values should be considered undocumented and may

@@ -1,2 +1,3 @@
 exportPattern("^[^\\.]")
 S3method("predict", "randomGLM")
+import(MASS, foreach, doParallel)

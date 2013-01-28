@@ -62,12 +62,50 @@
 {
   cat(.spaste(..., "\n"));
 }
+
+.prependZeros = function(x, len = max(nchar(x)))
+{
+  lengths = nchar(x);
+  if (len < max(lengths)) stop("Some entries of 'x' are too long.");
+  out = as.character(x);
+  n = length(x);
+  for (i in 1:n) if (lengths[i] < len)
+    out[i] = .spaste( paste(rep("0", len-lengths[i]), collapse = ""),
+                     x[i]);
+
+  out;
+}
+
   
 #=====================================================
 #
 # Generator of interactions
 #
 #=====================================================
+
+# My own function for generating combinations since the one in gtools fails with large n's.
+
+# Combinations with repeats
+
+.combinations = function(n, order)
+{
+  if (order==1) return(matrix(c(1:n), 1, n));
+
+  # If order is not 1, calculate result using recursion
+  nOut = choose(n+order-1, order);
+  out = matrix(0, order, nOut);
+  sub = .combinations(n, order-1)
+  index = 1;
+  for (i in 1:n)
+  {
+    n1 = ncol(sub);
+    out[, index:(index + n1 - 1)] = rbind( rep(i, ncol(sub)), sub);
+    index = index + n1;
+    sub = sub[, colSums(sub==i) == 0, drop = FALSE];
+  }
+  out;
+}
+ 
 
 # Generates an interaction matrix of all interactions up to specified maxOrder of
 # variables indexed 1:n. Optionally also sets column names with some flexibility.
@@ -76,16 +114,14 @@
 .interactionMatrix = function(n, maxOrder, 
                  setColNames = TRUE,
                  originalNames = c(1:n),
-                 namePrefix = "Level.",
-                 interactionSeparator = "..",
                  featureSeparator = ".")
 {
   out = NULL;
   for (o in 1:maxOrder)
   {
-    combs = t(combinations(n, o, repeats.allowed = TRUE));
-    colnames = .spaste(namePrefix, o, interactionSeparator, 
-                       apply(combs, 2, paste, collapse = featureSeparator));
+    combs = .combinations(n, o);
+    nameMatrix = array(originalNames[combs], dim = dim(combs));
+    colnames = apply(nameMatrix, 2, paste, collapse = featureSeparator);
     if (o < maxOrder)
        combs = rbind( combs, matrix(0, maxOrder-o, ncol(combs)));
     if (setColNames) colnames(combs) = colnames;
@@ -239,12 +275,13 @@
 
 .forwardSelection = function( xBag, yBag, xTestBag, 
                              classify, 
-                             maxInteractionOrder = 1,
+                             maxInteractionOrder,
                              nCandidateCovariates,  
                              corFncForCandidateCovariates, corOptionsForCandidateCovariates, 
                              NmandatoryCovariates,
-                             interactionsMandatory = FALSE,
-                             keepModel = FALSE)
+                             interactionsMandatory,
+                             keepModel,
+                             interactionSeparatorForCoefNames)
 {  
   # remove features with missing value or var=0
   indxMiss = apply(is.na(xBag), 2, sum)>0
@@ -268,7 +305,8 @@
 
   # Add interaction terms:
   # generate the interaction matrix
-  interactionMatrix = .interactionMatrix(nFeatures, maxInteractionOrder, setColNames = TRUE);
+  interactionMatrix = .interactionMatrix(nFeatures, maxInteractionOrder, originalNames = colnames(xBag),
+                                    setColNames = TRUE, featureSeparator = interactionSeparatorForCoefNames);
   # Identify mandatory interactions. If interactions of mandatory covariates are also mandatory, add all
   # interactions where at least one term is mandatory (which will be many, so must be used with
   # caution)
@@ -319,7 +357,7 @@
 
   # Need to remove large variables from the current environment because a copy of this environment is kept
   # in the formula and models below. 
-  modelData = as.data.frame(x.int);
+  modelData = data.frame(x.int);
 
   rm(xBag, xTestBag, x.int, corOptionsForCandidateCovariates, interactionMatrix);
 
@@ -400,7 +438,7 @@
       # On Windows: icreate a cluster manually
       # and  export the parent evinronment of this function for randomGLM to work as well, plus
       # the environment of packages gtools and MASS that are needed. 
-      cluster = makePSOCKcluster(nThreads);
+      cluster = makePSOCKcluster(nThreads, outfile = "");
       assign(".randomGLMparallelCluster", cluster, pos = ".GlobalEnv");
       clusterExport(cluster, varlist = ls(envir = parent.env(environment()), all.names = TRUE), 
                              envir = parent.env(environment()))
@@ -450,6 +488,7 @@ randomGLM = function(
   nObsInBag = if (replace) nrow(x) else as.integer(0.632 * nrow(x)),
   nFeaturesInBag = ceiling(ifelse(ncol(x)<=10, ncol(x), 
 		ifelse(ncol(x)<=300, (1.0276-0.00276*ncol(x))*ncol(x), ncol(x)/5))),
+  minInBagObs = min( max( nrow(x)/2, 5), 2*nrow(x)/3),
 
   # Individual ensemble member predictor options
   nCandidateCovariates=50,
@@ -461,6 +500,7 @@ randomGLM = function(
 
   # Miscellaneous options
   thresholdClassProb = 0.5,
+  interactionSeparatorForCoefNames = ".times.",
   randomSeed = 12345,
   nThreads = NULL,
   verbose =0 )
@@ -525,6 +565,7 @@ randomGLM = function(
                               interactionsMandatory = interactionsMandatory,
                               keepModels = keepModels,
                               thresholdClassProb = thresholdClassProb,
+                              interactionSeparatorForCoefNames = interactionSeparatorForCoefNames,
                               randomSeed = randomSeed,
                               nThreads = nThreads,
                               verbose = verbose - 1);
@@ -571,13 +612,44 @@ randomGLM = function(
   }
 
   x = as.matrix(x);
+
+  featureNames.original = colnames(x);
+  nVars = ncol(x);
+  if (is.null(featureNames.original)) 
+  {
+     featureNames.original = featureNames = .spaste("F", .prependZeros(c(1:nVars)));
+     colnames(x) = featureNames.original;
+     namesChanged = FALSE;
+  } else {
+     featureNames = make.names(featureNames.original, unique = TRUE);
+     if (isTRUE(all.equal(featureNames, featureNames.original)))
+     {
+       namesChanged = FALSE;
+     } else {
+       namesChanged = TRUE;
+       nameTranslationTable = data.frame(Column = c(1:nVars), OriginalName = featureNames.original,
+                                    CoefficientName = featureNames);
+       colnames(x) = featureNames;
+     }
+  }
+
   # PL: Why this line? Because this drops all col- and row-names?
-  x = matrix(as.numeric(x), nrow(x), ncol(x))
+  # x = matrix(as.numeric(x), nrow(x), ncol(x))
 
   if (length(y)!=nrow(x)) {stop("x and y must have the same number of observations.")}
 
   nSamples = length(y);
-  nVars = ncol(x);
+
+  if (nSamples < 8) 
+  {
+    .cat.nl("*****************************************************************\n",
+            "* Warning in randomGLM: there are 7 or fewer observations.\n",
+            "*   This may be too few to perform meaningful model selection\n", 
+            "*   on in-bag (i.e., even fewer) samples.\n",
+            "*   Model selection algorithm will likely output additional warnings.\n",
+            "*   The resulting predictor should be used with caution.\n",
+            "*****************************************************************");
+  }
 
   nonMandatCovars = setdiff( c(1:nVars), mandatoryCovariates);
   nMandatoryCovariates = length(mandatoryCovariates);
@@ -609,7 +681,7 @@ randomGLM = function(
     stop("Error: thresholdClassProb takes values between 0  and 1.")
 
   ## rename features 
-  colnames(x) = paste("feature", 1:nVars, sep="")
+  # colnames(x) = paste("feature", 1:nVars, sep="")
 
   ## scale x
   xSD = apply(x, 2, sd, na.rm=TRUE)
@@ -625,18 +697,16 @@ randomGLM = function(
     xtestSaved = xtest;
 
     xtest = as.matrix(xtest);
-    xtest = matrix(as.numeric(xtest), nrow(xtest), ncol(xtest))
-
     if (ncol(x)!=ncol(xtest))
       stop("Number of learning and testing predictors (columns of x, xtest) must equal.");
 
-    nTestSamples = nrow(xtest);
+    if (!is.null(colnames(xtest)))
+    {
+      if (!isTRUE(all.equal(colnames(xtest), featureNames.original)))
+        stop("Column names of 'x' and 'xtest' disagree.");
+    } 
     colnames(xtest) = colnames(x)
-
-    ## scale xtest using mean and sd of x
-
-    #xtest = (xtest - matrix(xMean, nTestSamples, nVars, byrow=TRUE))/
-    #                    matrix(xSD, nTestSamples, nVars, byrow=TRUE)
+    nTestSamples = nrow(xtest);
     xtest[, !validFeatures] = 0
    # matrix for test set predicted values across bags 
     predictedTestMat =  matrix(NA, nTestSamples, nBags);
@@ -698,7 +768,9 @@ randomGLM = function(
       yBag = y[bagSamples];
       yBagVar = var(yBag, na.rm=TRUE)
       # If there are no out-of-bag samples, force re-sampling as well
-      if (length(unique(bagSamples))==nSamples) yBagVar = 0
+      # If the number of in-bag samples is less minInBagObs, re-sample again
+      nUniqueInBag = length(unique(bagSamples));
+      if (nUniqueInBag==nSamples | nUniqueInBag < minInBagObs) yBagVar = 0
     }
     bagObsIndx[, bag] = bagSamples;
     bagFeatures[, bag] = c(mandatoryCovariates,
@@ -717,19 +789,18 @@ randomGLM = function(
     oob = c(1:nSamples)[-unique(bagSamples)];
     nOOB = length(oob);
     features = bagFeatures[, bag]
-    xBag = x[bagSamples, features];
+    xBag = x[bagSamples, features, drop = FALSE];
     yBag = y[bagSamples];
 
     if (doTest)
     {
-      xTestBag = rbind(x[oob, features], xtest[, features]);
+      xTestBag = rbind(x[oob, features, drop = FALSE], xtest[, features, drop = FALSE]);
     } else {
-      xTestBag = x[oob, features];
+      xTestBag = x[oob, features, drop = FALSE];
     }
     # Here I only need to pass the number of mandatory covariates to function forwardSelection, because
     # they're saved at the beginning of features. 
 
-    #if (verbose > 5) {m = gc()[2,2]; .cat.nl("  Step 2: ", m, ", diff: ", m - mem.last); mem.last = m}
     pr = .forwardSelection(xBag, yBag, xTestBag, 
                           classify=classify, 
                           maxInteractionOrder = maxInteractionOrder,
@@ -738,7 +809,8 @@ randomGLM = function(
                           corOptionsForCandidateCovariates = corOptionsForCandidateCovariates, 
                           NmandatoryCovariates = nMandatoryCovariates,
                           interactionsMandatory = interactionsMandatory,
-                          keepModel = keepModels);
+                          keepModel = keepModels,
+                          interactionSeparatorForCoefNames = interactionSeparatorForCoefNames);
 
     #if (verbose > 5) {m = gc()[2,2]; .cat.nl("  Step 3: ", m, ", diff: ", m - mem.last); mem.last = m}
     # get output
@@ -767,14 +839,15 @@ randomGLM = function(
   # execution.
   if (nThreads > 1)
   {
-    ensemble = foreach (bag = 1:nBags, .combine = combinePredictors, .multicombine = TRUE) %dopar%
-      singleBagIteration(bag, verbose = 0)
+    ensemble = foreach (bag = 1:nBags, .combine = combinePredictors, .multicombine = TRUE, 
+                                       .maxcombine = nBags) %dopar%
+      singleBagIteration(bag, verbose = verbose)
   } else {
     bagRes = list();
     for (bag in 1:nBags)
     {
       bagRes[[bag]] = singleBagIteration(bag, verbose = verbose);
-      if (verbose > 5) {tmp = gc(); .cat.nl("  In main loop: ", tmp[2,2]);}
+      #if (verbose > 5) {tmp = gc(); .cat.nl("  In main loop: ", tmp[2,2]);}
       #.cat.nl("Size of information for each bag:");
       #print(object.size(bagRes[[bag]]), units = "auto");
     }
@@ -814,6 +887,8 @@ randomGLM = function(
              bagObsIndx = bagObsIndx,
              timesSelectedByForwardRegression = timesSelectedByForwardRegression,
              models = if (keepModels) ensemble$models else NULL,
+             featureNamesChanged = namesChanged,
+             nameTranslationTable = if (namesChanged) nameTranslationTable else NULL,
              classify = classify,
              nFeatures = nVars,
              maxInteractionOrder = maxInteractionOrder,
@@ -878,6 +953,7 @@ randomGLM = function(
   {
     nSamples = nrow(newdata)
     newdata.1 = cbind(newdata, rep(1, nSamples))
+    colnames(newdata) = make.names(colnames(newdata), unique = TRUE);
   } else {
     nSamples = length(object$y);
     x.1 = cbind(object$x, rep(1, nSamples));

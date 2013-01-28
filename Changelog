@@ -1,9 +1,37 @@
 
 Changes since 1.00
 
+2013/01/28: 1.02-1
+
+	. Fixes to problems with feature names that are not valid R names.
+	. Fixed a problem when using interactions with large numbers of
+	  features. This required a switch from the gtools' function
+	  combinations to an internal version; hence gtools is not required
+	  anymore.
+
+2013/01/23: 1.02
+
+	. Coefficient names in returned models and in
+	  featuresInForwardRegression are now easier to read for humans. New
+	  argument interactionSeparatorForCoefNames lets the user specify how
+	  interaction names are formed.
+
+2013/01/20: 1.01
+
+	. New argument minInBagObs lets user specify the minimum number of
+	  unique in-bag observations for each bag. This prevents bags with too
+	  few observations that can cause problems when fitting models.
+
+	. Function now works even when there is a single OOB observation in
+	  some bags
+
+2013/01/15: 1.00-2
+
+	. Fixed a failure of multi-threaded calculation with more than 100 bags.
+
 2013/01/13: 1.00-1
 
-	. Fixed a bug with default nThreads
+	. Fixed a bug with default (NULL) nThreads.
 
 
 Changes to version included in WGCNA
