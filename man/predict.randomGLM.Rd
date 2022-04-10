@@ -6,7 +6,7 @@
 
 \usage{
 \method{predict}{randomGLM}(object, newdata, type=c("response", "class"), 
-                 thresholdClassProb = object$thresholdClassProb, ...)
+                 thresholdClassProb = object$details$thresholdClassProb, ...)
 }
 
 \arguments{
@@ -65,8 +65,14 @@ yTrain = xyTrain[, 5]
 xTest = xyTest[, -5]
 yTest = xyTest[, 5]
 
-# predict with a small number of bags - normally nBags should be at least 100.
-RGLM = randomGLM(xTrain, yTrain, nCandidateCovariates=ncol(xTrain), nBags=30, keepModels = TRUE, nThreads = 1)
+# predict with a small number of bags 
+# - normally nBags should be at least 100.
+RGLM = randomGLM(
+   xTrain, yTrain, 
+   nCandidateCovariates=ncol(xTrain), 
+   nBags=30, 
+   keepModels = TRUE, nThreads = 1)
+
 predicted = predict(RGLM, newdata = xTest, type="class")
 table(predicted, yTest)
 
@@ -80,8 +86,13 @@ yTrain = y[1:50]
 xTest = x[51:100,]
 yTest = y[51:100]
 
-RGLM = randomGLM(xTrain, yTrain, classify=FALSE, nCandidateCovariates=ncol(xTrain), 
-                 nBags=10, keepModels = TRUE, nThreads = 1)
+RGLM = randomGLM(
+   xTrain, yTrain, 
+   classify=FALSE, 
+   nCandidateCovariates=ncol(xTrain), 
+   nBags=10, 
+   keepModels = TRUE, nThreads = 1)
+
 predicted = predict(RGLM, newdata = xTest)
 }
 \keyword{misc}

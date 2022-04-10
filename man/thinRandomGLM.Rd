@@ -95,7 +95,11 @@ xTest = xyTest[, -5]
 yTest = xyTest[, 5]
 
 # predict with a small number of bags - normally nBags should be at least 100.
-RGLM = randomGLM(xTrain, yTrain, nCandidateCovariates=ncol(xTrain), nBags=30, keepModels = TRUE, nThreads = 1)
+RGLM = randomGLM(
+   xTrain, yTrain, 
+   nCandidateCovariates=ncol(xTrain), 
+   nBags=30, 
+   keepModels = TRUE, nThreads = 1)
 table(RGLM$timesSelectedByForwardRegression[1, ])
 # 0  7 23 
 # 2  1  1 

@@ -1,6 +1,77 @@
 
 Changes since 1.00
 
+2022/04/08: 1.10-1
+
+	. Added citations to DESCRIPTION and to help file for randomGLM
+
+2021/06/12: 1.10
+
+	. Bump version for release
+
+2021/05/30: 1.09-992
+
+	. Minor changes in internal code handling multi-threading (via cluster
+	  functions from parallel) on Windows.
+
+	. Cleanup of metadata (DESCRIPTION) and help files to comply with CRAN
+	  rules
+
+	. New argument 'weight' lets the user specify sample weights for the
+	  underlying regression models.
+
+	. DIFF: randomGLM now works with categorical data. Categorical variables are
+	  first binarized, then used as other numeric variables except their
+	  power in interactions can never be more than 1. This may lead to
+	  slightly different predictions when some features are categorical.
+
+	. New arguments  categoricalColumns  and maxCategoricalLevels allow
+	  the user to specify which columns should be treated as categorical.
+
+	. New argument includeSelfinteractions allows the user to turn off
+	  self-interactions for continuous features. Older versions of
+	  randomGLM allowed self-interactions but other statistical approaches
+	  usually exclude them.
+
+	. New argument replaceBadBagFeatures optionally turns on a more
+	  efficient handling of features with missing data. The old behaviour
+	  was to remove them from each bag without attempting to replace them;
+	  the new, optional behaviour is to only sample from features that
+	  have no missing values in the bag samples. This should lead to more
+	  in-bag variables when missing data are present. 
+
+	. Bug fix: randomGLM now correctly records variables that were
+	  retained by the model selection when missing data are present. This
+	  bug led to incorrect results from functions predict and
+	  thinRandomGLM.
+
+	. Function accuracyMeasures now also works with factors.
+
+2013/05/22: 1.05-2
+
+	. Bugfix: function works correctly with suvival objects.
+
+	. Internal bugfix that may lead to slightly different sets of features
+	  being selected for each bag.
+
+2013/05/09: 1.05-1
+
+	. More descriptive error message generated if all features are removed
+	  from a bag due to missing data or constantness.
+
+	. Bug fix: predictor now works with a test set that consists of a
+	  single sample.
+
+2013/02/18: 1.05
+
+	. The predictor now works with a variety of responses including all
+	  glm families and censored time (Surv) responses.
+
+2013/02/06: 1.03
+
+	. New function accuracyMeasures for convenient calculation of most
+	  accuracy measures. 
+
 2013/01/28: 1.02-1
 
 	. Fixes to problems with feature names that are not valid R names.

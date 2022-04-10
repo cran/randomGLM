@@ -9,14 +9,40 @@ Ensemble predictor comprised of individual generalized linear model predictors.
 randomGLM(
   # Input data
   x, y, xtest = NULL,
+  weights = NULL,
+
+  # Which columns in x are categorical?
+  categoricalColumns = NULL,
+  maxCategoricalLevels = 2,
 
   # Include interactions?
   maxInteractionOrder = 1,
+  includeSelfinteractions = TRUE,
 
-  # Prediction type
-  classify = is.factor(y) | length(unique(y)) < 4,
+  # Prediction type: type can be used to set 
+  # the prediction type in a simplified way...
+  type = c("auto", "linear", "binary", "count", "general", "survival"),
 
-  # Multi-level classification options - only apply to classification with multi-level response
+  # classify is retained mostly for backwards compatibility
+  classify = switch(type, 
+    auto = !is.Surv(y) & (is.factor(y) | length(unique(y)) < 4),
+    linear = FALSE,
+    binary = TRUE ,
+    count = FALSE,
+    general = FALSE,
+    survival = FALSE),
+
+  # family can be used to fine-tune the underlying regression model
+  family = switch(type, 
+    auto = NULL,
+    linear = gaussian(link="identity"),
+    binary = binomial(link=logit),
+    count = poisson(link = "log"),
+    general = NULL,
+    survival = NULL),
+
+  # Multi-level classification options - only apply to classification 
+  # with multi-level response
   multiClass.global = TRUE,
   multiClass.pairwise = FALSE,
   multiClass.minObs = 1,
@@ -25,11 +51,13 @@ randomGLM(
   # Sampling options
   nBags = 100,
   replace = TRUE,
-  sampleWeight=NULL,
+  sampleBaggingWeights = NULL,
   nObsInBag = if (replace) nrow(x) else as.integer(0.632 * nrow(x)),
   nFeaturesInBag = ceiling(ifelse(ncol(x)<=10, ncol(x),
-                ifelse(ncol(x)<=300, (1.0276-0.00276*ncol(x))*ncol(x), ncol(x)/5))),
+        ifelse(ncol(x)<=300, (1.0276-0.00276*ncol(x))*ncol(x), ncol(x)/5))),
   minInBagObs = min( max( nrow(x)/2, 5), 2*nrow(x)/3),
+  maxBagAttempts = 100*nBags,
+  replaceBadBagFeatures = TRUE,
 
   # Individual ensemble member predictor options
   nCandidateCovariates=50,
@@ -45,7 +73,6 @@ randomGLM(
   randomSeed = 12345,
   nThreads = NULL,
   verbose =0 )
-
 }
 
 \arguments{
@@ -57,16 +84,42 @@ randomGLM(
 \code{x} are interpreted as training data). The number of rows can (and typically will) be different from
 the number of rows in \code{x}.} 
 
+  \item{weights}{optional specifications of sample weights for the regression models. Not to be confused
+with \code{sampleBaggingWeights} below.}
+
+  \item{categoricalColumns}{optional specifications of columns that are to be treated as categorical. If
+not given, columns with at most \code{maxCategoricalLevels} (see below) unique values will be considered
+categorical.}
+
+  \item{maxCategoricalLevels}{columns with no more than this number of unique values will be considered
+categorical.}
+
   \item{maxInteractionOrder}{ integer specifying the maximum interaction level. The default is to have no
 interactions; numbers higher than 1 specify interactions up to that order. For example, 3 means quadratic
 and cubic interactions will be included. Warning: higher order interactions greatly increase the computation
 time. We see no benefit of using maxInteractionOrder>2.} 
 
-  \item{classify}{logical: If \code{TRUE} the response \code{y} will be interpreted as a binary variable and
+  \item{includeSelfinteractions}{logical: should self-interactions be included?}
+
+  \item{type}{character string specifying the type of the response variable. Recognized values are (unique
+abbreviations of) 
+\code{"auto"}, \code{"linear"}, \code{"binary"}, \code{"count"}, \code{"general"}, and \code{"survival"}. See
+Details for what the individual types mean.
+}
+
+  \item{classify}{logical indicating whether the response is a categorical variable. This argument is
+present mainly for backwards compatibility; please use \code{type} above to specify the type of the response
+variable. If \code{TRUE} the response \code{y} will be interpreted as a binary variable and
 logistic regression will be used. If \code{FALSE} the response \code{y} will be interpreted as a
 quantitative numeric variable and a least squares regression model will be used to arrive at base learners.
 Multi-level classification is split into a series of binary classification problems according to the
 \code{multiClass...} arguments described below.}
+
+  \item{family}{Specification of family (see \code{\link[stats]{family}}) for general linear model fitting
+(see \code{\link[stats]{glm}}). Default values are provided for most of the specific types but can be
+overriden here (for example, if a different link function is desired). There is no default value for
+\code{type = "general"} and the user must specify a valid family. In contrast, this argument must be
+\code{NULL} when \code{type = "survival"}. }
 
   \item{multiClass.global}{for multi-level classification, this logical argument controls whether binary
 variables of the type "level vs. all others" are included in the series of binary variables to which
@@ -90,7 +143,7 @@ corresponds to the number of individual GLMs.}
   \item{replace}{logical. If \code{TRUE} then each bootstrap sample (bag) is defined by sampling with
 replacement. Otherwise, sampling is carried out without replacement. We recommend to choose \code{TRUE}. } 
  
-  \item{sampleWeight}{weight assigned to each observations (sample) during bootstrap sampling. Default \code{NULL} corresponds to equal weights.}
+  \item{sampleBaggingWeights}{weights assigned to each observations (sample) during bootstrap sampling. Default \code{NULL} corresponds to equal weights.}
 
   \item{nObsInBag}{number of observations selected for each bag. Typically, a bootstrap sample (bag) has the
 same number of observations as in the original data set (i.e. the rows of \code{x}).}  
@@ -104,17 +157,21 @@ produces a bag with fewer than this number of unique observations, the bag is di
 until the number of unique observations is at least \code{minInBagObs}. This helps prevent too few unique
 observations in a bag which would lead to problems with model selection. }
 
+  \item{maxBagAttempts}{Maximum number of bagging attempts.}
+ 
+  \item{replaceBadBagFeatures}{If a feature in a bag contains missing data, should it be replaced?}
+
   \item{nCandidateCovariates}{Positive integer. The number of features that are being considered for forward
 selection in each GLM (and in each bag). For each bag, the covariates are being chosen according their
 highest absolute correlation with the outcome. In case of a binary outcome, it is first turned into a binary
 numeric variable.  } 
 
   \item{corFncForCandidateCovariates}{the correlation function used to select candidate covariates. Choices
-include \code{\link[stats]{cor}} or biweight midcorrelation, \code{\link[WGCNA]{bicor}}, implemented in the
+include \code{\link[stats]{cor}} or biweight midcorrelation, \code{bicor}, implemented in the
 package WGCNA. The biweight mid-correlation is a robust alternative to the Pearson correlation.}
 
   \item{corOptionsForCandidateCovariates}{list of arguments to the correlation function. Note that robust correlations are sometimes problematic for binary class outcomes. When using the robust
-correlation \code{\link[WGCNA]{bicor}}, use the argument \code{"robustY=FALSE"}.}
+correlation \code{bicor}, use the argument \code{"robustY=FALSE"}.}
 
   \item{mandatoryCovariates}{indices of features that are included as mandatory covariates in each GLM model. The default is no mandatory features. This allows the user to "force" variables into each GLM.} 
 
@@ -147,8 +204,33 @@ zero or negative values etc.) are changed to 1, with a warning.}
 
 \details{
 
-At this point, the function \code{randomGLM} can be used to predict a binary outcome or a
-quantitative numeric outcome. This ensemble predictor proceeds along the following steps. 
+The function \code{randomGLM} can be used to predict a variety of different types of outcomes. The outcome
+type is specified by the argument \code{type} as follows:
+
+If \code{type = "auto"}, the function will attempt to determine the response type automatically. If the response
+is not a \code{\link[survival]{Surv}} object and is a factor or has 3 or fewer unique values, 
+it is assumed to be categorical. If the number of unique values is 2, the function uses logistic regression;
+for categorical responses with more 3 or more possible values, see below.
+
+If \code{type = "linear"}, the responses is assumed to be numeric with Gaussian errors, and the function
+will use linear regression.
+
+If \code{type = "binary"}, the response is assumed to be categorical (at this point not necessarily binary
+but that may change in the future). If the response has 2 levels, logistic regression (binomial family with
+the logit link) is used. If the response has more than 2 levels, see below.
+
+If \code{type = "count"}, the response is assumed to represent counts with Poisson-distributed errors, and
+Poisson regression (poisson family with the logarithmic link) is used.
+
+If \code{type = "general"}, the function does not make assumption about the response type and the user must
+specify an appropriate family (see \code{\link{stats}{family}}).
+
+If \code{type = "survival"}, the function assumes the response is a censored time, that is a
+\code{\link[survival]{Surv}} object. In this case the argument \code{family} must be \code{NULL} (the
+default) and the function uses Cox proportional hazard regression implemented in function
+\code{\link[survival]{coxph}}
+
+The function proceeds along the following steps:
 
 Step 1 (bagging): \code{nBags} bootstrapped data sets are being generated based on random sampling from the
 original training data set (\code{x},\code{y}). If a bag contains less than \code{minInBagObs} unique
@@ -296,12 +378,10 @@ information as the names of the \code{binaryPredictors} list but in a more progr
 
   If input \code{xTest} is non-NULL, the components \code{predictedTest} and \code{predictedTest.response}
 contain test set predictions analogous to \code{predictedOOB} and \code{predictedOOB.response}.
-
 }
-
   
 \references{
-Lin Song, Peter Langfelder, Steve Horvath: Random generalized linear model: a highly accurate and interpretable ensemble predictor. BMC Bioinformatics (2013)
+Lin Song, Peter Langfelder, Steve Horvath: Random generalized linear model: a highly accurate and interpretable ensemble predictor. BMC Bioinformatics 2013 Jan 16;14:5. doi: 10.1186/1471-2105-14-5. 
 }
 
 \author{Lin Song, Steve Horvath, Peter Langfelder. 
@@ -327,8 +407,14 @@ yTrain = xyTrain[, 5]
 xTest = xyTest[, -5]
 yTest = xyTest[, 5]
 
-# predict with a small number of bags - normally nBags should be at least 100.
-RGLM = randomGLM(xTrain, yTrain, xTest, nCandidateCovariates=ncol(xTrain), nBags=30, nThreads = 1)
+# predict with a small number of bags 
+# - normally nBags should be at least 100.
+RGLM = randomGLM(
+   xTrain, yTrain, 
+   xTest, 
+   nCandidateCovariates=ncol(xTrain), 
+   nBags=30, nThreads = 1)
+
 yPredicted = RGLM$predictedTest
 table(yPredicted, yTest)
 
@@ -343,8 +429,12 @@ yTrain = y[1:50]
 xTest = x[51:100,]
 yTest = y[51:100]
 
-RGLM = randomGLM(xTrain, yTrain, xTest, classify=FALSE, nCandidateCovariates=ncol(xTrain), nBags=10, 
-                 keepModels = TRUE, nThreads = 1)
+RGLM = randomGLM(
+  xTrain, yTrain, 
+  xTest, classify=FALSE, 
+  nCandidateCovariates=ncol(xTrain), 
+  nBags=10, 
+  keepModels = TRUE, nThreads = 1)
 }
 \keyword{misc}
 
